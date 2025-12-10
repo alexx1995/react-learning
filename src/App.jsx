@@ -33,34 +33,34 @@ class ProblemGenerator {
   static generate() {
     const operations = Object.values(OPERATIONS);
     let operand1, operand2, operation;
-    
+
     do {
       operand1 = Math.floor(Math.random() * 9) + 1;
       operand2 = Math.floor(Math.random() * 9) + 1;
       operation = operations[Math.floor(Math.random() * operations.length)];
-      
+
       // Evitar divisiones con resto y división por 0
       if (operation === OPERATIONS.DIVISION) {
         if (operand2 === 0 || operand1 % operand2 !== 0) {
           continue;
         }
       }
-      
+
       // Evitar restas negativas
       if (operation === OPERATIONS.SUBTRACTION && operand1 < operand2) {
         [operand1, operand2] = [operand2, operand1];
       }
-      
+
       break;
     } while (true);
-    
+
     return new MathProblem(operand1, operand2, operation);
   }
 }
 
 class ScoreManager {
   static STORAGE_KEY = 'math_game_scores';
-  
+
   static getTopScores(limit = 5) {
     try {
       const scores = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]');
@@ -71,10 +71,10 @@ class ScoreManager {
       return [];
     }
   }
-  
+
   static saveScore(playerName, score) {
     try {
-      const scores = this.getTopScores(100);
+      const scores = JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]');
       scores.push({
         name: playerName,
         score,
@@ -104,7 +104,8 @@ const INITIAL_STATE = {
   score: 0,
   timeRemaining: 30,
   showSuccess: false,
-  topScores: []
+  topScores: [],
+  playerNameToSave: null
 };
 
 const gameReducer = (state, action) => {
@@ -119,10 +120,10 @@ const gameReducer = (state, action) => {
         userInput: '',
         showSuccess: false
       };
-    
+
     case 'UPDATE_INPUT':
       return { ...state, userInput: action.payload };
-    
+
     case 'CORRECT_ANSWER':
       return {
         ...state,
@@ -131,10 +132,10 @@ const gameReducer = (state, action) => {
         userInput: '',
         showSuccess: true
       };
-    
+
     case 'HIDE_SUCCESS':
       return { ...state, showSuccess: false };
-    
+
     case 'TICK':
       const newTime = Math.max(0, state.timeRemaining - 1);
       return {
@@ -142,17 +143,16 @@ const gameReducer = (state, action) => {
         timeRemaining: newTime,
         gameState: newTime === 0 ? GAME_STATES.GAME_OVER : state.gameState
       };
-    
+
     case 'SAVE_SCORE':
-      ScoreManager.saveScore(action.payload, state.score);
-      return { ...state, topScores: ScoreManager.getTopScores() };
-    
+      return { ...state, playerNameToSave: action.payload };
+
     case 'RETURN_TO_MENU':
       return { ...INITIAL_STATE, topScores: ScoreManager.getTopScores() };
-    
+
     case 'LOAD_SCORES':
       return { ...state, topScores: ScoreManager.getTopScores() };
-    
+
     default:
       return state;
   }
@@ -165,7 +165,7 @@ const gameReducer = (state, action) => {
 const useGameTimer = (isPlaying, onTick) => {
   useEffect(() => {
     if (!isPlaying) return;
-    
+
     const interval = setInterval(onTick, 1000);
     return () => clearInterval(interval);
   }, [isPlaying, onTick]);
@@ -174,10 +174,10 @@ const useGameTimer = (isPlaying, onTick) => {
 const useAutoValidation = (userInput, currentProblem, onCorrect) => {
   useEffect(() => {
     if (!userInput || !currentProblem) return;
-    
+
     const numericInput = parseFloat(userInput);
     if (isNaN(numericInput)) return;
-    
+
     // Validar cuando el usuario termine de escribir un número válido
     if (currentProblem.isCorrect(userInput)) {
       onCorrect();
@@ -188,7 +188,7 @@ const useAutoValidation = (userInput, currentProblem, onCorrect) => {
 const useSuccessAnimation = (showSuccess, onHide) => {
   useEffect(() => {
     if (!showSuccess) return;
-    
+
     const timeout = setTimeout(onHide, 500);
     return () => clearTimeout(timeout);
   }, [showSuccess, onHide]);
@@ -204,9 +204,9 @@ const Button = ({ onClick, children, variant = 'primary', icon: Icon, className 
     primary: 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700',
     secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300'
   };
-  
+
   return (
-    <button 
+    <button
       onClick={onClick}
       className={`${baseClass} ${variants[variant]} ${className}`}
     >
@@ -245,11 +245,11 @@ const MenuScreen = ({ onStart, topScores }) => (
       <p className="text-gray-600 mb-8 text-lg">
         ¡30 segundos para demostrar tus habilidades matemáticas!
       </p>
-      
+
       <Button onClick={onStart} icon={Play} className="mx-auto mb-8">
         JUGAR
       </Button>
-      
+
       {topScores.length > 0 && (
         <div className="mt-8 pt-8 border-t border-gray-200">
           <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center justify-center gap-2">
@@ -258,7 +258,7 @@ const MenuScreen = ({ onStart, topScores }) => (
           </h2>
           <div className="space-y-2">
             {topScores.map((score, idx) => (
-              <div 
+              <div
                 key={idx}
                 className="flex justify-between items-center bg-gray-50 rounded-lg p-3"
               >
@@ -278,7 +278,7 @@ const MenuScreen = ({ onStart, topScores }) => (
 
 const GameScreen = ({ problem, userInput, onInputChange, score, timeRemaining, showSuccess }) => {
   const progressPercentage = (timeRemaining / 30) * 100;
-  
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-500 via-teal-500 to-green-500 flex items-center justify-center p-4">
       <Card className="max-w-2xl w-full">
@@ -286,21 +286,21 @@ const GameScreen = ({ problem, userInput, onInputChange, score, timeRemaining, s
           <StatDisplay icon={Target} label="Puntuación" value={score} color="green" />
           <StatDisplay icon={Clock} label="Tiempo" value={`${timeRemaining}s`} color="red" />
         </div>
-        
+
         <div className="relative mb-4">
           <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-gradient-to-r from-green-400 to-blue-500 transition-all duration-1000"
               style={{ width: `${progressPercentage}%` }}
             />
           </div>
         </div>
-        
+
         <div className="text-center mb-8">
           <div className="text-6xl font-black text-gray-800 mb-8">
             {problem.toString()} = ?
           </div>
-          
+
           <input
             type="number"
             value={userInput}
@@ -310,7 +310,7 @@ const GameScreen = ({ problem, userInput, onInputChange, score, timeRemaining, s
             autoFocus
           />
         </div>
-        
+
         {showSuccess && (
           <div className="fixed inset-0 pointer-events-none flex items-center justify-center">
             <div className="bg-green-500 text-white text-4xl font-bold px-12 py-8 rounded-3xl shadow-2xl animate-bounce -mt-120">
@@ -326,14 +326,14 @@ const GameScreen = ({ problem, userInput, onInputChange, score, timeRemaining, s
 const GameOverScreen = ({ score, onSaveScore, onReturnToMenu }) => {
   const [playerName, setPlayerName] = useState('');
   const [saved, setSaved] = useState(false);
-  
+
   const handleSave = () => {
-    if (playerName.trim()) {
+    if (playerName.trim() && !saved) {
       onSaveScore(playerName.trim());
       setSaved(true);
     }
   };
-  
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-500 via-red-500 to-pink-500 flex items-center justify-center p-4">
       <Card className="max-w-2xl w-full text-center">
@@ -343,12 +343,12 @@ const GameOverScreen = ({ score, onSaveScore, onReturnToMenu }) => {
             ¡Juego Terminado!
           </h1>
         </div>
-        
+
         <div className="bg-gradient-to-r from-purple-100 to-blue-100 rounded-xl p-8 mb-8">
           <p className="text-gray-600 text-lg mb-2">Tu Puntuación Final</p>
           <p className="text-7xl font-black text-purple-600">{score}</p>
         </div>
-        
+
         {!saved ? (
           <div className="mb-8">
             <input
@@ -359,7 +359,11 @@ const GameOverScreen = ({ score, onSaveScore, onReturnToMenu }) => {
               className="w-full max-w-sm mx-auto text-center text-xl border-2 border-gray-300 rounded-lg p-3 mb-4 focus:outline-none focus:border-purple-500 text-gray-900"
               maxLength={20}
             />
-            <Button onClick={handleSave} variant="primary" className="mx-auto">
+            <Button
+              onClick={handleSave}
+              variant="primary"
+              className={`mx-auto ${saved ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
               Guardar Puntuación
             </Button>
           </div>
@@ -368,8 +372,8 @@ const GameOverScreen = ({ score, onSaveScore, onReturnToMenu }) => {
             ✓ ¡Puntuación guardada!
           </div>
         )}
-        
-        <Button onClick={onReturnToMenu}  className="mx-auto">
+
+        <Button onClick={onReturnToMenu} className="mx-auto">
           Volver al Menú
         </Button>
       </Card>
@@ -383,55 +387,63 @@ const GameOverScreen = ({ score, onSaveScore, onReturnToMenu }) => {
 
 const MathGameApp = () => {
   const [state, dispatch] = useReducer(gameReducer, INITIAL_STATE);
-  
+
   // Load scores on mount
   useEffect(() => {
     dispatch({ type: 'LOAD_SCORES' });
   }, []);
-  
+
+  // Save score when playerNameToSave changes (side effect outside reducer)
+  useEffect(() => {
+    if (state.playerNameToSave) {
+      ScoreManager.saveScore(state.playerNameToSave, state.score);
+      dispatch({ type: 'LOAD_SCORES' });
+    }
+  }, [state.playerNameToSave, state.score]);
+
   // Game timer
   const handleTick = useCallback(() => {
     dispatch({ type: 'TICK' });
   }, []);
-  
+
   useGameTimer(state.gameState === GAME_STATES.PLAYING, handleTick);
-  
+
   // Auto validation
   const handleCorrectAnswer = useCallback(() => {
     dispatch({ type: 'CORRECT_ANSWER' });
   }, []);
-  
+
   useAutoValidation(state.userInput, state.currentProblem, handleCorrectAnswer);
-  
+
   // Success animation
   const handleHideSuccess = useCallback(() => {
     dispatch({ type: 'HIDE_SUCCESS' });
   }, []);
-  
+
   useSuccessAnimation(state.showSuccess, handleHideSuccess);
-  
+
   // Event handlers
   const handleStart = useCallback(() => {
     dispatch({ type: 'START_GAME' });
   }, []);
-  
+
   const handleInputChange = useCallback((value) => {
     dispatch({ type: 'UPDATE_INPUT', payload: value });
   }, []);
-  
+
   const handleSaveScore = useCallback((name) => {
     dispatch({ type: 'SAVE_SCORE', payload: name });
   }, []);
-  
+
   const handleReturnToMenu = useCallback(() => {
     dispatch({ type: 'RETURN_TO_MENU' });
   }, []);
-  
+
   // Render appropriate screen
   switch (state.gameState) {
     case GAME_STATES.MENU:
       return <MenuScreen onStart={handleStart} topScores={state.topScores} />;
-    
+
     case GAME_STATES.PLAYING:
       return (
         <GameScreen
@@ -443,7 +455,7 @@ const MathGameApp = () => {
           showSuccess={state.showSuccess}
         />
       );
-    
+
     case GAME_STATES.GAME_OVER:
       return (
         <GameOverScreen
@@ -452,7 +464,7 @@ const MathGameApp = () => {
           onReturnToMenu={handleReturnToMenu}
         />
       );
-    
+
     default:
       return null;
   }
